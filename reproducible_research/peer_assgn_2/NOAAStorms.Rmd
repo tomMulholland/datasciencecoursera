@@ -1,0 +1,181 @@
+NOAA Severe Weather Events - Economic and Human Effects
+---
+##Synopsis
+Data from the US National Oceanic and Atmospheric Administration's 
+(NOAA) database was used to analyze the economic and human impacts of different 
+weather events. While tornados overwhelming cause the most injuries and deaths, 
+floods and coastal storm surges caused the largest amount of property and crop 
+damage. This conclusion is skewed by the huge economic impact of Hurricane 
+Katrina in 2005. 
+
+##Data Processing
+Data was taken from the US National Oceanic and Atmospheric Administration's 
+(NOAA) database.  
+```{r, echo=TRUE, cache=TRUE}
+setwd(paste('/home/tom/scripts/gnuR/coursera/datasciencecoursera/',
+      'reproducible_research/peer_assgn_2', sep=""))
+if(!file.exists('data')){
+    dir.create('data')
+}
+file_url = paste('https://d396qusza40orc.cloudfront.net',
+                 '/repdata%2Fdata%2FStormData.csv.bz2', sep="")
+download.file(file_url, destfile = './data/NOAA_data.bz2', method="curl")
+#Note: a .bz2 unzip utility could not be found. The file must be manually
+#unzipped into the `working_directory/data` folder
+NOAA <- read.csv('./data/NOAA_data', header=TRUE)
+```
+
+The event types were adjusted and homogenized using text matching. 
+Those that didn't fit into a 
+category were classified as "Other," and were later evaluated to check the size
+and importance of that category. It turned out that, of 18 events classified 
+and one "Other" category, the 10th largest event by economic impact is 
+approximately the same size as the last 9 categories aggregated. This implies 
+that a sufficient amount of categories were described in order to catch the 
+most important types of weather event.  
+  
+The property and crop damage exponents were multiplied with the given values 
+to get the real monetary values. A few cases (around 400) had unknown exponent 
+values, hence these were discarded.
+
+```{r, echo=TRUE, cache=TRUE}
+evs <- tolower(NOAA$EVTYPE)
+events <- rep("Other", length(evs))
+events[c(grep("flood", evs), grep("flooding", evs), grep("rising water", evs), 
+      grep("floood", evs))] <- "Flood"
+events[c(grep("tornado", evs), grep("torndao", evs))] <- "Tornado"
+events[c(grep("hail", evs), grep("freezing", evs), grep("ice", evs),
+      grep("glaze", evs), grep("icy", evs))] <- 
+    "Hail/Freezing Rain/Ice"
+events[c(grep("winter", evs), grep("snow", evs), grep("sleet", evs),
+      grep("blizzard", evs), grep("wintry", evs), grep("mix", evs))] <- 
+    "Winter/Snow/Blizzard"
+events[c(grep("tide", evs), grep("coastal", evs), grep("surf", evs), 
+      grep("sea", evs), grep("wave", evs), grep("surge", evs), 
+      grep("swell", evs))] <- "Tide/Wave Event"
+events[c(grep("summary", evs), grep("remnant", evs))] <- NA
+events[c(grep("hurricane", evs), grep("tsunami", evs), grep("tropical", evs), 
+      grep("typhoon", evs))] <- "Hurricane/Tsunami/Tropical Storm"
+events[c(grep("wind", evs), grep("wnd", evs))] <- "Wind"
+events[c(grep("dry", evs), grep("drought", evs))] <- "Dry/Drought"
+events[c(grep("cold", evs), grep("frost", evs), grep("cool", evs),
+      grep("freeze", evs), grep("low temperature", evs), 
+      grep("record low", evs))] <- "Cold"
+events[grep("volcan", evs)] <- "Volcanic Ash"
+events[grep("fire", evs)] <- "Wildfire"
+events[c(grep("thunderstorm", evs), grep("lightning", evs), 
+      grep("lighting", evs), grep("ligntning", evs))] <- "Thunderstorms"
+events[c(grep("mud", evs), grep("rock", evs), grep("landslide", evs), 
+      grep("landslump", evs))] <- "Mudslide/Rockslide/Landslide"
+events[c(grep("avalance", evs), grep("avalanche", evs))] <- "Avalanche"
+events[c(grep("warm", evs), grep("heat", evs), grep("hot", evs), 
+      grep("record high", evs), grep("hyperthermia", evs), 
+      grep("high temperature", evs))] <- "Heat"
+events[c(grep("rain", evs), grep("wet", evs), grep("precipitation", evs), 
+      grep("precipatation", evs), grep("showers", evs))] <- "Rain"
+events[c(grep("fog", evs), grep("vog", evs))] <- "Fog"
+events[c(grep("spout", evs))] <- "Waterspouts"
+
+prop.dmg <- NOAA$PROPDMG
+prop.dmg[prop.dmg==""] <- 0
+prop.factor <- rep(NA, length(prop.dmg))
+prop.factor[NOAA$PROPDMGEXP==""] <- 1
+prop.factor[((NOAA$PROPDMGEXP=="k") | (NOAA$PROPDMGEXP=="K"))] <- 1e3
+prop.factor[((NOAA$PROPDMGEXP=="m") | (NOAA$PROPDMGEXP=="M"))] <- 1e6
+prop.factor[((NOAA$PROPDMGEXP=="b") | (NOAA$PROPDMGEXP=="B"))] <- 1e9
+#There is a serious error in this reference to the Napa Valley floods in
+#January 2006
+prop.factor[(NOAA$REFNUM==605943)] <- 1e6
+prop.dmg <- prop.dmg*prop.factor/1e6
+
+crop.dmg <- NOAA$CROPDMG
+crop.dmg[prop.dmg==""] <- 0
+crop.factor <- rep(NA, length(crop.dmg))
+crop.factor[NOAA$CROPDMGEXP==""] <- 1
+crop.factor[((NOAA$CROPDMGEXP=="k") | (NOAA$CROPDMGEXP=="K"))] <- 1e3
+crop.factor[((NOAA$CROPDMGEXP=="m") | (NOAA$CROPDMGEXP=="M"))] <- 1e6
+crop.factor[((NOAA$CROPDMGEXP=="b") | (NOAA$CROPDMGEXP=="B"))] <- 1e9
+crop.dmg <- crop.dmg*crop.factor/1e6
+
+date <- strptime(NOAA$BGN_DATE, "%m/%d/%Y %H:%M:%S")
+
+NOAA.clean <- data.frame("Date"=date, "State"=NOAA$STATE, "Event"=events, 
+                         "Fatalities"=NOAA$FATALITIES, 
+                         "Injuries"=NOAA$INJURIES, "Property.Damage"=prop.dmg, 
+                         "Crop.Damage"=crop.dmg, 
+                         "Year"=as.numeric(format(date, "%Y")))
+NOAA.clean <- NOAA.clean[complete.cases(NOAA.clean), ]
+remove(NOAA)
+```
+
+##Results: Human Impact
+Total casualties (deaths plus injuries) were analyzed across 
+the different weather event types.
+```{r, cache=TRUE}
+total.casualties <- aggregate((NOAA.clean$Fatalities + 
+                                 NOAA.clean$Injuries), 
+                           by=list(NOAA.clean$Event, NOAA.clean$Year), 
+                           FUN=sum)
+names(total.casualties) <- c("Event", "Year", "Total.Casualties")
+
+library(ggplot2)
+qplot(Year, Total.Casualties, data=total.casualties, color=Event, geom="line", 
+      ylab="Total Casualties", main="Total Casualties Related to Weather")
+```
+
+If the total casualties are summed across the recorded years, the effects of 
+other weather events are easier to perceive.
+```{r, cache=TRUE}
+casualties.totals <- aggregate((NOAA.clean$Fatalities + NOAA.clean$Injuries),
+                         by=list(NOAA.clean$Event), FUN=sum)
+names(casualties.totals) <- c("Event", "Total.Casualties")
+casualties.totals<- casualties.totals[order(casualties.totals$Total.Casualties, 
+                                             decreasing=TRUE), ]
+print(casualties.totals)
+```
+
+##Results: Economic Impact
+Crop damage and property damage can be summed together for a total economic 
+impact estimate.  
+    
+It's important to note, for instance, that a large amount of damage from 
+Hurrican Katrina in 2005, namely $31.3 billion, is classified as 
+"Storm Surge", which I reclassified as "Tide/Wave Event"
+```{r, cache=TRUE}
+total.dmg.year <- aggregate((NOAA.clean$Property.Damage + 
+                                 NOAA.clean$Crop.Damage), 
+                           by=list(NOAA.clean$Event, NOAA.clean$Year), 
+                           FUN=sum)
+names(total.dmg.year) <- c("Event", "Year", "Total.Damage")
+
+qplot(Year, Total.Damage, data=total.dmg.year, color=Event, geom="line", 
+      ylab="Total Damage (in Million USD)", xlim=c(1990, 2015))
+```
+
+If the total damage is summed across the recorded years, the effects of other 
+weather events are easier to perceive.
+```{r}
+hist.totals <- aggregate((NOAA.clean$Property.Damage + NOAA.clean$Crop.Damage),
+                         by=list(NOAA.clean$Event), FUN=sum)
+names(hist.totals) <- c("Event", "Total.Damage")
+hist.totals <- hist.totals[order(hist.totals$Total.Damage, decreasing=TRUE), ]
+print(hist.totals)
+```
+
+The top 10 largest contributors are shown below.
+```{r}
+other.events <- sum(hist.totals$Total.Damage[11:dim(hist.totals)[1]])
+top.damage <- data.frame(c(hist.totals$Total.Damage[1:10], other.events),
+                           row.names=c(as.character(hist.totals$Event[1:10]), 
+                                       "All Other"))
+names(top.damage) <- "Damage"
+pie(top.damage$Damage, labels=row.names(top.damage), 
+    main="Total Damage (in Million USD)", col=rainbow(11))
+```
+
+##Conclusions
+Clearly, tornados cause the largest human impact. The results in terms of 
+economic impact are less clear, as one single event, Hurricane Katrina, caused 
+a massive amount of damage. However, it is not trivial to remove this event 
+from the existing dataset, as the entries are mixed into different categories 
+such as "Storm Surge," "Hurricane," and possibly others.
